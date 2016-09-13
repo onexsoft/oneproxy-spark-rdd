@@ -1,5 +1,5 @@
 # oneproxy-spark-rdd
-A Spark JDBC RDD for OneProxy to Share the Data Distribution Information
+A Spark JDBC RDD for OneProxy to Share the Data Distribution Information. OneProxy can shard data into multiple MySQL instances, so Spark can connect to OneProxy as a distributed data source, just like Hadoop/HBase
 
 In OneProxy (version 5.8.6 or later) we can run "EXPLAIN2 sql" to get the data partitions involved from OneProxy, and then build the Spark RDD partitions relatively for faster parallize process.
 
