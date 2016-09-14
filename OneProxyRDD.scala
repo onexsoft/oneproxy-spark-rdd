@@ -50,7 +50,7 @@ class OneProxyRDD[T: ClassTag](
     sc: SparkContext,
     getConnection: () => Connection,
     sql: String,
-    mapRow: (ResultSet) => T = JdbcRDD.resultSetToObjectArray _)
+    mapRow: (ResultSet) => T = OneProxyRDD.resultSetToObjectArray _)
   extends RDD[T](sc, Nil) with Logging {
 
   override def getPartitions: Array[Partition] = {
@@ -58,14 +58,15 @@ class OneProxyRDD[T: ClassTag](
     val sparkrddSQL = "EXPLAIN2 " + sql
     
     val stmt = conn.prepareStatement(sparkrddSQL, ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY)
-    val rs = stmt.executeQuery()
-    
-    val i = 0
-    val parts = rs.toIterator.map(r => {
-        new JdbcPartition(i, r.getString("SPARKRDD"))
-        i = i + 1
-      })
+    val rssql = stmt.executeQuery()
+    val parts = List[OneProxyPartition]()
+    val i = 0;
 
+    while(rssql.next())
+    {
+        parts ::: List[OneProxyPartition](new OneProxyPartition(i, rssql.getString("SQLLIST")))
+        i + 1
+    }
     try {
         if (null != rs) {
           rs.close()
@@ -81,7 +82,7 @@ class OneProxyRDD[T: ClassTag](
         case e: Exception => logWarning("Exception closing statement", e)
     }
     
-    parts.toArray
+    return parts.toArray
   }
  
   override def compute(thePart: Partition, context: TaskContext): Iterator[T] = new NextIterator[T]
