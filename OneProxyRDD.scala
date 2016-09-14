@@ -27,6 +27,7 @@ import org.apache.spark.api.java.JavaSparkContext.fakeClassTag
 import org.apache.spark.api.java.function.{Function => JFunction}
 import org.apache.spark.internal.Logging
 import org.apache.spark.util.NextIterator
+import scala.collection.mutable.ArrayBuffer
 
 private[spark] class OneProxyPartition(idx: Int, val psql: String) extends Partition {
   override def index: Int = idx
@@ -53,36 +54,43 @@ class OneProxyRDD[T: ClassTag](
     mapRow: (ResultSet) => T = OneProxyRDD.resultSetToObjectArray _)
   extends RDD[T](sc, Nil) with Logging {
 
-  override def getPartitions: Array[Partition] = {
-    val conn = getConnection()
-    val sparkrddSQL = "EXPLAIN2 " + sql
-    
-    val stmt = conn.prepareStatement(sparkrddSQL, ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY)
-    val rssql = stmt.executeQuery()
-    val parts = List[OneProxyPartition]()
-    val i = 0;
+  private def getExplainSQL: ArrayBuffer[String] = {
+        val conn = getConnection()
+        val sparkrddSQL = "EXPLAIN2 " + sql
 
-    while(rssql.next())
-    {
-        parts ::: List[OneProxyPartition](new OneProxyPartition(i, rssql.getString("SQLLIST")))
-        i + 1
-    }
-    try {
-        if (null != rs) {
-          rs.close()
+        val stmt = conn.prepareStatement(sparkrddSQL, ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY)
+        val rssql = stmt.executeQuery()
+        val parts = ArrayBuffer[String]()
+
+        while(rssql.next())
+        {
+                val psql = rssql.getString("SQLLIST")
+                parts += psql
         }
-    } catch {
-        case e: Exception => logWarning("Exception closing resultset", e)
-    }
-    try {
-        if (null != stmt) {
-          stmt.close()
+
+        try {
+                if (null != rssql) {
+                        rssql.close()
+                }
+        } catch {
+                case e: Exception => logWarning("Exception closing resultset", e)
         }
-    } catch {
-        case e: Exception => logWarning("Exception closing statement", e)
-    }
-    
-    return parts.toArray
+        try {
+                if (null != stmt) {
+                        stmt.close()
+                }
+        } catch {
+                case e: Exception => logWarning("Exception closing statement", e)
+        }
+        parts
+  }
+
+  override def getPartitions: Array[Partition] = {
+    val i = -1
+    val sqls = getExplainSQL
+    (0 until sqls.length).map { i =>
+        new OneProxyPartition(i, sqls(i))
+    }.toArray
   }
  
   override def compute(thePart: Partition, context: TaskContext): Iterator[T] = new NextIterator[T]
